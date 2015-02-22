@@ -1,0 +1,162 @@
+---
+title: "Human Activity Recognition - machine learning algorithm"
+author: "Domingos Savio Apolonio Santos"
+date: "Monday, February 16, 2015"
+output: html_document
+---
+
+## Introduction
+
+This report presents the results of the course project for the **Practical Machine Learning** course, part of **the Johns Hopkins Data Science Specialization** on **Coursera**.
+
+The devices Jawbone Up, Nike FuelBand, and Fitbit can collect easily a large amount of personal activity data. People can use these devices to quantify how much physical activities they do, but almost never quantify how well they do it. In the context of [[1]](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), six persons were asked to perform barbell lifts correctly and incorrectly in 5 different ways.This report shows how data were used  to predict the manner in which they did the exercise (**classe** variable in the training set).
+
+There is a version of this document available at [http://rpubs.com/dsasas/pml](http://rpubs.com/dsasas/pml)
+
+
+## Load and explore data
+
+The data for this experiment come from [Human Activity Recognition Project](http://groupware.les.inf.puc-rio.br/har):
+
+- The training data: [pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+- The test data: [pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+According to [[1]](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), participants performed one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different ways:
+
+a) Correct execution of the exercise: **Class A**
+b) With common mistakes: 
+
+- **Class B** - the elbows to the front
+- **Class C** - lifting the dumbbell only halfway
+- **Class D** - lowering the dumbbell only halfway
+- **Class E** - throwing the hips to the front
+
+#### Loading data
+
+The training and test are loading in **pmlTraining** and **pmlTesting** data frames respectively. In this step, extra spaces and problem values, ("NA","","NULL"and "#DIV/0!") are classified as **NA**. 
+```{r load, echo=TRUE}
+# Loading the data, removing extra spaces and replacing "NA","","NULL"and "#DIV/0!" with an NA value.
+pmlTraining <- read.csv("pml-training.csv", na.strings=c("NA","","NULL","#DIV/0!"), strip.white=TRUE)
+pmlTesting <- read.csv("pml-testing.csv", na.strings=c("NA","","NULL","#DIV/0!"), strip.white=TRUE)
+```
+#### Inspecting the data 
+
+It is necessary to explore the data to analyze how to clean them:
+
+**a) The dimension of the data (rows and columns):**
+```{r explore, echo=TRUE}
+# Showing the dimension of the Training data and Testing data.
+dim(pmlTraining);dim(pmlTesting)
+# Checking if the columns names are the same for both datasets (Testing and Training)
+names(pmlTraining)[names(pmlTesting) != names(pmlTraining)]; names(pmlTesting)[names(pmlTesting) != names(pmlTraining)]
+
+```
+**b) Check the columns names**
+```{r}
+# Checking if the columns names are the same for both datasets (Testing and Training)
+names(pmlTraining)[names(pmlTesting) != names(pmlTraining)]; names(pmlTesting)[names(pmlTesting) != names(pmlTraining)]
+```
+Both datasets have the same variable names, except for the outcome **classe** in the training dataset and **problem_id** in testing dataset. This happens because the **problem_id** variable is used to identify the 20 test cases for the submission of the prediction results.
+
+**c) NA values:**
+```{r}
+# showing the amount of NA values in Testing and Training dataset
+sum(is.na(pmlTraining));sum(is.na(pmlTesting)); 
+# Showing the amount of columns with their respective amount of NA values 
+naValuesTraining = sapply(pmlTraining, function(x) {sum(is.na(x))})
+table(naValuesTraining)
+naValuesTesting = sapply(pmlTesting, function(x) {sum(is.na(x))})
+table(naValuesTesting)
+```
+
+Both datasets have a large number of missing values ("NA") and there are only 60 columns without them.
+
+#### Cleaning Data
+
+The data analysis shows it is necessary to perform two cleaning operations:
+
+**a) Remove the first seven variables that they are not related to the movement data: **"X","user_name","raw_timestamp_part_1","raw_timestamp_part_2", "cvtd_timestamp","new_window" and "num_window"**. 
+```{r clean, echo=TRUE}
+# Cleaning the data to reduce the number of predictors
+# Removing the first seven variables that they are not related to the movement data:
+# (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) 
+newPmlTraining<-pmlTraining[, -c(1:7)]
+newPmlTesting<-pmlTesting[, -c(1:7)]
+```
+**b) Remove columns have almost all NA values:**
+```{r na, echo=TRUE}
+# Removing columns have almost all NA values
+newPmlTraining = newPmlTraining[, !names(newPmlTraining) %in% names(naValuesTraining[naValuesTraining>0])]
+newPmlTesting = newPmlTesting[, !names(newPmlTesting) %in% names(naValuesTraining[naValuesTraining>0])]
+```
+
+After that, it decreases the number of columns from 160 to 53:
+```{r dim, echo=TRUE}
+# Showing the new dimension of the new Training data and new Testing data.
+dim(newPmlTraining);dim(newPmlTesting)
+```
+
+
+#### Splitting training data
+
+In this step,  the cleaned testing data is split up into training and cross validation set in a 70:30 ratio in order to train the model.
+```{r split, echo=TRUE}
+# Splitting new training dataset to perform a cross validation later (70% training and 30% testing).
+library(caret)
+set.seed(3755)
+temp <- createDataPartition(y = newPmlTraining$classe, p = 0.7, list = FALSE)
+dataTrainingPml <- newPmlTraining[temp, ]
+validTestingPml <- newPmlTraining[-temp, ]
+```
+
+##  Building the model
+
+At first, It was planning to use the random forest method [2] and analyze the OOB estimate error rate. If it was not satisfactory (less than 1%), different methods could be tried.
+```{r model, echo=TRUE}
+# Building the Model 
+library(randomForest)
+model1 = randomForest(classe ~., data=dataTrainingPml)
+model1
+```
+The **OOB estimate of error rate** obtained was 0.52%, less than 1% (satisfactory). 
+
+Now, it plotted the model in order to show the overall error of the model by trees.
+```{r plot, echo=TRUE}
+layout(matrix(c(1,2),nrow=1),
+       width=c(4,1)) 
+par(mar=c(5,4,4,0)) 
+plot(model1, log="y")
+par(mar=c(5,0,4,2)) 
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("top", colnames(model1$err.rate),col=1:4,cex=0.8,fill=1:4)
+```
+
+
+##  Cross-validation
+
+In this step, it performs the cross-validation test to classify the test set (30%) of the training set. A confusion matrix is used in order to analyze the model's accuracy.
+```{r, CrossValidation, echo=TRUE}
+# crossvalidating
+validPredict <- predict(model1, validTestingPml)
+confusionMatrix(validTestingPml$classe, validPredict)
+```
+The accuracy obtained was 99.5%, that means the model has a very good prediction for different data set.
+
+##  Using the prediction model to predict
+
+Now, the original test data is used to predict 20 different test cases, according to project requisites:
+```{r redict, echo=TRUE}
+# predict
+predictTest <- predict(model1, newPmlTesting)
+predictTest
+```
+
+##  Conclusion
+
+The model obtained shows that random forest method was very satisfactory for the presented problem. As a result, further exploration of alternative models was not necessary.
+
+## References
+
+1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. [ONLINE] Available at http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf and http://groupware.les.inf.puc-rio.br/har#ixzz3RxdqVyEe [Accessed 17 February 2015].
+
+2. Breiman, L. (2001). Random forests. Machine Learning, 45(1), 5-32.
